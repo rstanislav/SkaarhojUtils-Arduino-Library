@@ -89,12 +89,23 @@ void SkaarhojUtils::encoders_init() {
 	_encoders_pushOnTriggerTimeFired[0] = false;
 	_encoders_pushOnTriggerTimeFired[1] = false;
 	
+	_encoders_interruptState[0]=2;	// 2 = Untouched by interrupts
+	_encoders_interruptState[1]=2;	
+	
 	pinMode(3, INPUT);
 	pinMode(5, INPUT);
 	pinMode(6, INPUT);
-	pinMode(7, INPUT);
+	pinMode(2, INPUT);
 	pinMode(8, INPUT);
 	pinMode(9, INPUT);
+}
+void SkaarhojUtils::encoders_interrupt(uint8_t encNum)	{
+	if (encNum <2)	{
+		if (_encoders_interruptState[encNum]>1)	{	// Only set the value on the first trigger (more triggers may happen due to debouncing in the switch)
+			_encoders_interruptState[encNum] = digitalRead(encNum==1?8:5);	// Direction pin 8 or 5
+		}
+		_encoders_interruptStateNum[encNum]++;	// TEMP
+	}
 }
 
 int SkaarhojUtils::encoders_state(uint8_t encNum) {
@@ -108,7 +119,7 @@ int SkaarhojUtils::encoders_state(uint8_t encNum, unsigned int buttonPushTrigger
 		// Check:
 	if (encNum <2)	{
 		if (encNum==1)	{
-			trigger_pin = 7;
+			trigger_pin = 2;
 			direction_pin = 8;
 			push_pin = 9;
 		} else {	// encNum == 0
@@ -124,9 +135,9 @@ int SkaarhojUtils::encoders_state(uint8_t encNum, unsigned int buttonPushTrigger
 		isPushed = isPushed & digitalRead(push_pin);
 		isTriggered = isTriggered & digitalRead(trigger_pin);
 
-			// Rotation:
+			// Detecting direction in case no hardware interrupts (on pin 2 and 3, RISING) are used:
 			// Notice: We detect the phase shift both on trigger and de-trigger - and return a value 1/-1 ONLY if they agree. 
-			// This is a poor-mans way to raise the chance that a correct answer is given on the rotation now that we don't use interrupts
+			// This is a poor-mans way to raise the chance that a correct answer is given on the rotation if we don't use interrupts
 			// The general problem is this: When we look for a change on the trigger pin we might detect that somewhere in the last part of the period of the signal - and here the direction signal will be reverted again and we detect a rotation in the oppositve direction
 			// In other words: The principle of detecting the rotation is based on the assumption that we detect the trigger and direction signals immediately as the trigger happens - which is only the case if we use interrupts and certainly a problem that becomes larger as we have slower and slower runloops.
 		if (isTriggered)  {
@@ -141,6 +152,21 @@ int SkaarhojUtils::encoders_state(uint8_t encNum, unsigned int buttonPushTrigger
 		} else {
 			if (_encoders_countOn[encNum]) {
 				_encoders_countOn[encNum] = false; 
+				
+				Serial.println(_encoders_interruptStateNum[encNum], DEC);	// TEMP
+
+					// React on interrupt generated hints about the direction pin state upon the first trigger:
+				if (_encoders_interruptState[encNum]==1)	{
+					_encoders_interruptState[encNum]=2;
+					_encoders_interruptStateNum[encNum]=0;
+					return 1;
+				} else if (_encoders_interruptState[encNum]==0) {
+					_encoders_interruptState[encNum]=2;
+					_encoders_interruptStateNum[encNum]=0;
+					return -1;
+				}
+				
+					// If no interrupt hints (if they were not enabled), fall back to the normal detection:
 				if (digitalRead(direction_pin))  {
 					if (_encoders_triggerCache[encNum]==-1) return -1; 	// Must agree.
 				} else {

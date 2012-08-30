@@ -20,8 +20,23 @@ void setup() {
   Serial.begin(9600);
   Serial.println("Serial started");
   
-  utils.encoders_init();
+  utils.encoders_init();  // Init encoders
+    // Here we attach hardware interrups to functions that call the encoder object (see below). Trigger pins must be soldered to D2 and D3:
+    // We can choose not to use interrupts (just comment these lines out) and the utils-library will fall back to standard detection, but that is usually not satisfactory.
+  attachInterrupt(0, _enc1active, RISING);  // Lower encoder (1), pin 2
+  attachInterrupt(1, _enc0active, RISING);  // Higher encoder (0), pin 3
 }
+
+  // The following two functions are called for hardware interrupt 0 and 1. They in turn call the encoder object to detect the direction pin state.
+  // Using interrupts for this secures that we detect the rotation direction of the encoders right. 
+void _enc0active()  {
+  utils.encoders_interrupt(0);
+}
+void _enc1active()  {
+  utils.encoders_interrupt(1);
+}
+
+
 
 void loop() {
   int encValue = utils.encoders_state(0,1000);
@@ -35,4 +50,12 @@ void loop() {
      Serial.print("Encoder 1: ");
      Serial.println(encValue); 
   }
+}
+
+
+//volatile int state = LOW;
+
+void blink()
+{
+  Serial.println(digitalRead(8));
 }

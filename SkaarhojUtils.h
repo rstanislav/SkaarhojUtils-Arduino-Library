@@ -43,6 +43,8 @@ class SkaarhojUtils
 	bool _encoders_pushOn[2];
 	bool _encoders_pushOnTriggerTimeFired[2];
 	unsigned long _encoders_pushOnMillis[2];
+	uint8_t _encoders_interruptState[2];
+	int _encoders_interruptStateNum[2];	// TEMP
 	
 	int _touch_Xthreshold;
 	int _touch_Ythreshold;
@@ -91,6 +93,7 @@ class SkaarhojUtils
 	void encoders_init();
 	int encoders_state(uint8_t encNum);
 	int encoders_state(uint8_t encNum, unsigned int buttonPushTriggerDelay);
+	void encoders_interrupt(uint8_t encNum);
 	
 		// Touch functions:
 	void touch_init();
