@@ -31,6 +31,9 @@
 class SkaarhojUtils
 {
   private:
+	bool _debugMode;
+	
+	uint8_t _uniDirectionalSlider_analogInputPin;
 	int _uniDirectionalSlider_sliderTolerance;
     int _uniDirectionalSlider_sliderLowEndOffset;
     int _uniDirectionalSlider_sliderHighEndOffset;
@@ -43,8 +46,11 @@ class SkaarhojUtils
 	bool _encoders_pushOn[2];
 	bool _encoders_pushOnTriggerTimeFired[2];
 	unsigned long _encoders_pushOnMillis[2];
-	uint8_t _encoders_interruptState[2];
-	int _encoders_interruptStateNum[2];	// TEMP
+//	uint8_t _encoders_interruptState[2];
+	volatile int _encoders_interruptStateNum[2];
+	volatile unsigned long _encoders_interruptStateTime[2];
+	int _encoders_interruptStateNumMem[2];
+	int _encoders_interruptStateLastCount[2];
 	
 	int _touch_Xthreshold;
 	int _touch_Ythreshold;
@@ -82,9 +88,11 @@ class SkaarhojUtils
 	
   public:
 	SkaarhojUtils();
+	void debugMode();
 	
 		// Slider functions:
 	void uniDirectionalSlider_init();
+	void uniDirectionalSlider_init(int sliderTolerance, int sliderLowEndOffset, int sliderHighEndOffset, uint8_t analogInputPin);
 	bool uniDirectionalSlider_hasMoved();
 	int uniDirectionalSlider_position();
 	bool uniDirectionalSlider_isAtEnd();
@@ -92,6 +100,7 @@ class SkaarhojUtils
 		// Encoder functions:
 	void encoders_init();
 	int encoders_state(uint8_t encNum);
+	int encoders_lastCount(uint8_t encNum);
 	int encoders_state(uint8_t encNum, unsigned int buttonPushTriggerDelay);
 	void encoders_interrupt(uint8_t encNum);
 	
@@ -106,6 +115,8 @@ class SkaarhojUtils
 	uint8_t touch_type();
 	int touch_coordX(int rawCoordX);
 	int touch_coordY(int rawCoordY);
+	int touch_getStartedXCoord();
+	int touch_getStartedYCoord();
 	int touch_getEndedXCoord();
 	int touch_getEndedYCoord();
 	int touch_getRawXValMax();

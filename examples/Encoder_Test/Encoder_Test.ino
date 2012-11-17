@@ -9,18 +9,36 @@
  * 
  * - kasper
  *
- * This example code is in the public domain.
+ * This example code is under GNU GPL license
  */
 
 
 #include "SkaarhojUtils.h"
 SkaarhojUtils utils;
 
+
+
+// no-cost stream operator as described at 
+// http://arduiniana.org/libraries/streaming/
+template<class T>
+inline Print &operator <<(Print &obj, T arg)
+{  
+  obj.print(arg); 
+  return obj; 
+}
+
+
+
 void setup() {
-  Serial.begin(9600);
-  Serial.println("Serial started");
+
+  // Start the Serial (debugging) and UDP:
+  Serial.begin(9600);  
+  Serial << F("\n- - - - - - - -\nSerial Started\n");
+
   
   utils.encoders_init();  // Init encoders
+  utils.debugMode();
+  
     // Here we attach hardware interrups to functions that call the encoder object (see below). Trigger pins must be soldered to D2 and D3:
     // We can choose not to use interrupts (just comment these lines out) and the utils-library will fall back to standard detection, but that is usually not satisfactory.
   attachInterrupt(0, _enc1active, RISING);  // Lower encoder (1), pin 2
@@ -41,21 +59,12 @@ void _enc1active()  {
 void loop() {
   int encValue = utils.encoders_state(0,1000);
   if (encValue)  {
-     Serial.print("Encoder 0: ");
-     Serial.println(encValue); 
+     Serial << F("Encoder 0: ") << encValue << "\n"; 
   }
 
   encValue = utils.encoders_state(1,1000);
   if (encValue)  {
-     Serial.print("Encoder 1: ");
-     Serial.println(encValue); 
+     Serial << F("Encoder 1: ") << encValue << "\n"; 
   }
 }
 
-
-//volatile int state = LOW;
-
-void blink()
-{
-  Serial.println(digitalRead(8));
-}

@@ -17,16 +17,24 @@
 #include "SkaarhojUtils.h"
 
 
-SkaarhojUtils::SkaarhojUtils(){}	// Empty constructor.
+SkaarhojUtils::SkaarhojUtils(){
+	_debugMode = false;
+}	// Empty constructor.
+void SkaarhojUtils::debugMode()	{
+	_debugMode=true;	
+}
 
 
-
-void SkaarhojUtils::uniDirectionalSlider_init()	{
+void SkaarhojUtils::uniDirectionalSlider_init(){
+	uniDirectionalSlider_init(10, 35, 35, A0);
+}
+void SkaarhojUtils::uniDirectionalSlider_init(int sliderTolerance, int sliderLowEndOffset, int sliderHighEndOffset, uint8_t analogInputPin)	{
 
 		// Configuration constants, should have setter-methods:
-	_uniDirectionalSlider_sliderTolerance = 10;  // >0. How much it should be moved before it counts as a change.
-    _uniDirectionalSlider_sliderLowEndOffset = 20;  // >0. How far the slider is moved in the low end before we start registering the value range: The starting position.
-    _uniDirectionalSlider_sliderHighEndOffset = 20;  // >0. How far the slider is moved in the high end before we start registering the value range: The ending position.
+	_uniDirectionalSlider_analogInputPin = analogInputPin;
+	_uniDirectionalSlider_sliderTolerance = sliderTolerance;  // >0. How much it should be moved before it counts as a change.
+    _uniDirectionalSlider_sliderLowEndOffset = sliderLowEndOffset;  // >0. How far the slider is moved in the low end before we start registering the value range: The starting position.
+    _uniDirectionalSlider_sliderHighEndOffset = sliderHighEndOffset;  // >0. How far the slider is moved in the high end before we start registering the value range: The ending position.
 
 		// Internal variables during operation:
 	_uniDirectionalSlider_previousSliderValue=-1;
@@ -35,7 +43,7 @@ void SkaarhojUtils::uniDirectionalSlider_init()	{
 }
 
 bool SkaarhojUtils::uniDirectionalSlider_hasMoved()	{
-	int sliderValue = analogRead(0);
+	int sliderValue = analogRead(_uniDirectionalSlider_analogInputPin);
 
 	if (sliderValue > _uniDirectionalSlider_previousSliderValue+_uniDirectionalSlider_sliderTolerance || sliderValue < _uniDirectionalSlider_previousSliderValue-_uniDirectionalSlider_sliderTolerance)  {
 
@@ -89,8 +97,11 @@ void SkaarhojUtils::encoders_init() {
 	_encoders_pushOnTriggerTimeFired[0] = false;
 	_encoders_pushOnTriggerTimeFired[1] = false;
 	
-	_encoders_interruptState[0]=2;	// 2 = Untouched by interrupts
-	_encoders_interruptState[1]=2;	
+	_encoders_interruptStateNum[0] = 0;
+	_encoders_interruptStateNum[1] = 0;
+
+	_encoders_interruptStateNumMem[0] = 0;
+	_encoders_interruptStateNumMem[1] = 0;
 	
 	pinMode(3, INPUT);
 	pinMode(5, INPUT);
@@ -101,15 +112,20 @@ void SkaarhojUtils::encoders_init() {
 }
 void SkaarhojUtils::encoders_interrupt(uint8_t encNum)	{
 	if (encNum <2)	{
-		if (_encoders_interruptState[encNum]>1)	{	// Only set the value on the first trigger (more triggers may happen due to debouncing in the switch)
-			_encoders_interruptState[encNum] = digitalRead(encNum==1?8:5);	// Direction pin 8 or 5
+		if (digitalRead(encNum==1?8:5))	{
+			_encoders_interruptStateNum[encNum]++;
+		} else {
+			_encoders_interruptStateNum[encNum]--;
 		}
-		_encoders_interruptStateNum[encNum]++;	// TEMP
+		_encoders_interruptStateTime[encNum] = millis();
 	}
 }
 
 int SkaarhojUtils::encoders_state(uint8_t encNum) {
 	return encoders_state(encNum, 0);
+}
+int SkaarhojUtils::encoders_lastCount(uint8_t encNum) {
+	return _encoders_interruptStateLastCount[encNum];
 }
 int SkaarhojUtils::encoders_state(uint8_t encNum, unsigned int buttonPushTriggerDelay) {
 	uint8_t trigger_pin;
@@ -128,14 +144,28 @@ int SkaarhojUtils::encoders_state(uint8_t encNum, unsigned int buttonPushTrigger
 			push_pin = 6;
 		}
 
-			// De-bouncing:
 		bool isPushed = digitalRead(push_pin);
-		bool isTriggered = digitalRead(trigger_pin);
-		delay(1);
-		isPushed = isPushed & digitalRead(push_pin);
-		isTriggered = isTriggered & digitalRead(trigger_pin);
 
-			// Detecting direction in case no hardware interrupts (on pin 2 and 3, RISING) are used:
+			// If rotations has been detected in either direction:
+		if (_encoders_interruptStateNumMem[encNum] != _encoders_interruptStateNum[encNum])	{
+			
+				// Check if the last interrupt generated signal is younger than 1000 ms, only then will we accept it, otherwise we ignore.
+			if (_encoders_interruptStateTime[encNum]+1000 > (unsigned long)millis())	{	
+				_encoders_interruptStateLastCount[encNum] = _encoders_interruptStateNum[encNum]-_encoders_interruptStateNumMem[encNum];
+			} else {
+				_encoders_interruptStateLastCount[encNum] = 0;
+			}
+			_encoders_interruptStateNumMem[encNum] = _encoders_interruptStateNum[encNum];	// Set ..NumMem to ..Mem. This is to avoid setting the value of a variable that might also be written to from the interrupt - which will crash the Arduino!
+
+			if (_debugMode)	{
+				Serial.print(F("Number of trigger signals: "));
+				Serial.println(_encoders_interruptStateLastCount[encNum], DEC);	// TEMP
+			}
+			return _encoders_interruptStateLastCount[encNum]!=0 ? (_encoders_interruptStateLastCount[encNum] < 0 ? -1 : 1) : 0;
+		}
+//		_encoders_interruptState[encNum]=2;
+
+/*			// Detecting direction in case no hardware interrupts (on pin 2 and 3, RISING) are used:
 			// Notice: We detect the phase shift both on trigger and de-trigger - and return a value 1/-1 ONLY if they agree. 
 			// This is a poor-mans way to raise the chance that a correct answer is given on the rotation if we don't use interrupts
 			// The general problem is this: When we look for a change on the trigger pin we might detect that somewhere in the last part of the period of the signal - and here the direction signal will be reverted again and we detect a rotation in the oppositve direction
@@ -153,8 +183,10 @@ int SkaarhojUtils::encoders_state(uint8_t encNum, unsigned int buttonPushTrigger
 			if (_encoders_countOn[encNum]) {
 				_encoders_countOn[encNum] = false; 
 				
-				Serial.println(_encoders_interruptStateNum[encNum], DEC);	// TEMP
-
+				if (_debugMode)	{
+					Serial.print(F("Number of trigger signals: "));
+					Serial.println(_encoders_interruptStateNum[encNum], DEC);	// TEMP
+				}
 					// React on interrupt generated hints about the direction pin state upon the first trigger:
 				if (_encoders_interruptState[encNum]==1)	{
 					_encoders_interruptState[encNum]=2;
@@ -173,9 +205,11 @@ int SkaarhojUtils::encoders_state(uint8_t encNum, unsigned int buttonPushTrigger
 					if (_encoders_triggerCache[encNum]==1) return 1; 	// Must agree.
 				}
 			}
-		}
+		} */
 
 			// Push:
+		delay(1);
+		isPushed = isPushed & digitalRead(push_pin);
 		if (isPushed)  {
 			if (!_encoders_pushOn[encNum]) {
 				_encoders_pushOn[encNum] = true;
@@ -498,6 +532,13 @@ int SkaarhojUtils::touch_getRawXVal() {
 }
 int SkaarhojUtils::touch_getRawYVal() {
 	return _touch_rawYVal;
+}
+
+int SkaarhojUtils::touch_getStartedXCoord() {
+	return touch_coordX(_touch_touchStartedRawXVal);
+}
+int SkaarhojUtils::touch_getStartedYCoord() {
+	return touch_coordY(_touch_touchStartedRawYVal);
 }
 
 int SkaarhojUtils::touch_getEndedXCoord() {
