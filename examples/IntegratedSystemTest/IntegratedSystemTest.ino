@@ -1,12 +1,13 @@
 /*****************
- * This example is an integrated functional test of the components that make up a SKAARHOJ C100, C200, C300 series device.
+ * This example is an integrated functional test of the components that make up a SKAARHOJ C10x, C20x, C3xx series device.
  * It does NOT connect to any peripherals (such as an ATEM switcher)
  * It allows you to exercise multiple interconnected components. These include:
  * - Writing to the serial display (2x16 chars)
  * - Navigate an example menu structure with the encoders (no actions though).
- * - Shows status of the config switch (Used on SKAARHOJ C100 and C200 series models etc).
+ * - Shows status of the config switch (Used on some SKAARHOJ models).
  * - Reacts to button presses (colors are cycled, button numbers revealed in display)
  * - Shows slider position on display
+ * - Tests 2 smartswitches
  * 
  * The menu structure is a real world example taken from a C100 sketch. 
  * The data it displays is dummy data from internal memory.
@@ -16,17 +17,50 @@
  * This example code is under GNU GPL license
  */
 
-// Including libraries: 
-#include <MenuBackend.h>  // Library for menu navigation. Must (for some reason) be included early! Otherwise compilation chokes.
 
-#include "SkaarhojUtils.h"
-SkaarhojUtils utils;
+
+
+
+
+/****************************
+ * Including libraries: 
+ ***************************/
+// Library for menu navigation. Must (for some reason) be included early! Otherwise compilation chokes.
+#include "MenuBackend.h"  
 
 // All related to library "SkaarhojBI8":
 #include "Wire.h"
 #include "MCP23017.h"
 #include "PCA9685.h"
 #include "SkaarhojBI8.h"
+
+// Libraries for slider/T-bar and encoder:
+#include "SkaarhojUtils.h"
+SkaarhojUtils utils;
+
+// Library for SmartSwitches:
+#include "SkaarhojSmartSwitch.h"
+SkaarhojSmartSwitch SmartSwitch;
+
+
+// Animated logo
+static uint8_t movielogo[] PROGMEM = {
+  32, // width
+  20, // height
+
+  /* page 0 (lines 0-7) */
+  0xfc,0xfe,0xf3,0xf3,0xff,0xff,0xf3,0xf3,0xff,0xff,0xf3,0xf3,0xff,0xff,0xf7,0xf3,
+  0xff,0xff,0xf7,0xf3,0xf7,0xff,0xff,0xf3,0xf3,0xfe,0xfc,0x80,0x80,0xc0,0xc0,0xc0,
+  
+  /* page 1 (lines 8-15) */
+  0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+  0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x1f,0x1f,0x3f,0x3f,0x7f,
+  
+  /* page 2 (lines 16-23) */
+  0x3,0x7,0xc,0xc,0xf,0xf,0xc,0xc,0xf,0xf,0xc,0xc,0xf,0xf,0xe,0xc,
+  0xf,0xf,0xe,0xc,0xe,0xf,0xf,0xc,0xe,0x7,0x3,0x0,0x0,0x0,0x0,0x0,
+  
+};
 
 //#include <MemoryFree.h>
 
@@ -239,7 +273,9 @@ void menuChangeEvent(MenuChangeEvent changed)
     // Show default text.... status whatever....
     clearLCD();
     lcdPosition(0,0);
-    LCD.print(F("  HELLO WORLD!  (Back to normal)"));    
+    LCD.print(F("  HELLO WORLD!  "));    
+    lcdPosition(1,0);
+    LCD.print(F("(Back to normal)"));    
     setMenuValues=0;
   } 
   else {
@@ -249,7 +285,13 @@ void menuChangeEvent(MenuChangeEvent changed)
     for(int i=strlen(changed.to.getName()); i<16; i++)  {
       LCD.print(" ");
     }
-
+    if (strlen(changed.to.getName())>16)  {
+      lcdPosition(1,0);
+      for(int i=16; i<strlen(changed.to.getName()); i++)  {
+        LCD.print(changed.to.getName()[i]);
+      }
+    }
+    
     // If there are no menu items to the right, we assume its a value change:
     if (!(bool)changed.to.getRight())  {
       if (!menu_userbut.isEqual(*changed.to.getLeft()))  {  // If it is not the special "User Button" selection, show the value and set a flag for Encoder 1 to operate (see ....)
@@ -306,7 +348,9 @@ void menuChangeEvent(MenuChangeEvent changed)
     } 
     else {  // Just clear the displays second line if there are items to the right in the menu:
       lcdPosition(0,15);
-      LCD.print(">                ");  // Arrow + Clear the line...
+      LCD.print(F(">"));  // Arrow + Clear the line...
+      lcdPosition(1,0);
+      LCD.print(F("                "));  // Arrow + Clear the line...
     }
   }
 }
@@ -450,8 +494,21 @@ void setup() {
 
   clearLCD();
   lcdPosition(0,0);
-  LCD.print(F("  HELLO WORLD!  (Disp+Nav..test) "));    
+  LCD.print(F("  HELLO WORLD!  "));    
+  lcdPosition(1,0);
+  LCD.print(F("(Disp+Nav..test)"));    
 
+  // Switches on address 4 + SDI on pins 48+49:  
+  SmartSwitch.begin(4,48,49);
+  SmartSwitch.setButtonBrightness(7, BUTTON_ALL);
+  SmartSwitch.setButtonColor(3,3,3,BUTTON_ALL);
+  SmartSwitch.clearScreen(BUTTON_ALL);
+  delay(500);
+  SmartSwitch.drawImage(BUTTON1, 0, 0, IMAGE_CENTER, movielogo);  // This line crashes the Arduino because of "-2". If "0" in the Y-coordinate, it doesn't. Probably there is a memory problem here!
+  SmartSwitch.updateScreen(BUTTON1);  // Writes the buffered pixmap to the button.
+  delay(1000);
+  SmartSwitch.writeText(BUTTON1, "TESTING", 3, TEXT_CENTER | TEXT_BACKGROUND | TEXT_REVERSE);
+  SmartSwitch.updateScreen(BUTTON1);  // Writes the buffered pixmap to the button.
 
   // *********************************
   // Final Setup
@@ -480,15 +537,55 @@ void setup() {
  *************************************************************/
 
 // The loop function:
+unsigned long lastActionTime = 0;
 void loop() {
   menuNavigation();
   menuValues();
   checkConfigMode();
   checkSlider();
   checkButtons();
+  smartSwitchButtons();
+
+  // Run the LED test sequence for each board:
+  if ((unsigned long)(lastActionTime+60000) < (unsigned long)millis())  {
+    uint8_t bDown = 0;
+    clearLCD();
+    lcdPosition(0,0);
+    LCD.print(F("Cycling btn cols"));    
+    lcdPosition(1,0);
+    LCD.print(F("Press to stop"));    
+    
+    delay(2000);
+    for(uint8_t i=0;i<=3;i++)  {  
+      if (boardArrayEnabled[i]) {
+        bDown = boardArray[i].testSequence(50);
+      }
+      if (bDown)  {
+        clearLCD();
+        setLastActionTime();
+        break;
+      }
+    }
+  } else if ((unsigned long)(lastActionTime+5000) < (unsigned long)millis())  {
+    long hours;
+    long mins;
+    long secs;
+    char buffer[18];
+    secs = (unsigned long)(millis())/1000;
+    mins = secs/60;
+    hours = mins/60;
+    secs = secs-(mins*60);
+    mins = mins-(hours*60);
+    sprintf(buffer, "Upt: %3d:%02d:%02d   ", (int)hours, (int)mins, (int)secs);
+    lcdPosition(1,0);
+    LCD << buffer;
+  }
 
   // Shows free memory:  
   // Serial << F("freeMemory()=") << freeMemory() << "\n";  
+}
+void setLastActionTime()  {
+  lastActionTime = millis();
 }
 
 
@@ -505,6 +602,7 @@ void checkConfigMode() {
     lcdPosition(1,0);
     LCD.print(F("Cfg.Switch:  "));
     LCD.print(isConfigMode ? "On " : "Off");
+    setLastActionTime();
   }
 }
 
@@ -519,6 +617,7 @@ void checkConfigMode() {
 void checkSlider()  {
   // Slidertest:
   if (utils.uniDirectionalSlider_hasMoved())  {
+    setLastActionTime();
     lcdPosition(1,0);
     LCD << F("Slider: ");
     lcdPrintValue(utils.uniDirectionalSlider_position(),4);
@@ -549,12 +648,14 @@ void checkButtons()  {
         if (boardArray[i].buttonDown(j))  {
           lcdPosition(1,0);
           LCD << F("BI8#") << i << F(" btn#") << j << " Down";
+          setLastActionTime();
 
           boardArray[i].setButtonColor(j, nextButtonColor(i*8+j));
         }  
         if (boardArray[i].buttonUp(j))  {
           lcdPosition(1,0);
           LCD << F("BI8#") << i << F(" btn#") << j << " Up  ";
+          setLastActionTime();
         }  
       }  
 
@@ -581,6 +682,7 @@ void menuNavigation() {
   // Read upper encoder value
   int encValue = utils.encoders_state(0,1000);
   if (encValue)  {
+     setLastActionTime();
      Serial << F("Encoder 0: ") << encValue << "\n"; 
   }  
   // Decide the action to take (navigation wise):
@@ -618,6 +720,7 @@ void menuValues()  {
   int encValue = utils.encoders_state(1,1000);
   int lastCount =  utils.encoders_lastCount(1);
   if (encValue)  {
+     setLastActionTime();
      Serial << F("Encoder 1: ") << encValue << " /  Count: " << lastCount << "\n";   // The longer this serial print, the more likely is a crash. I believe it's because I'm also serial-printing from within the interrupt functions and it can happen that the serial.print function is executed both places at the same time!
    }
   
@@ -802,8 +905,50 @@ void menuValues_printTrType(int sVal)  {
 }
 
 
-
-
+/**********************************
+ * SmartSwitch buttons:
+ ***********************************/
+int state, modes;
+void smartSwitchButtons() {
+  word buttons = SmartSwitch.buttonUpAll();
+  for(int j=0; j<4; j++) {
+    if(buttons & (1 << j)) {
+      modes = SmartSwitch.getButtonModes();
+      setLastActionTime();
+      Serial.print("Button ");
+      Serial.print(j, DEC);
+      Serial.println(" was pressed!");
+      state = modes >> j*2 & B11;
+      Serial.print("State: ");
+      Serial.println(state, BIN);
+      if(state == 0) {
+        SmartSwitch.clearPixmap(1<<j);
+        SmartSwitch.drawLine(0,0,63,31, 1<<j);
+        SmartSwitch.drawLine(0,31,63,0, 1<<j);
+        SmartSwitch.drawHorisontalLine(0, 1<<j);
+        SmartSwitch.drawHorisontalLine(31, 1<<j);
+        SmartSwitch.drawVerticalLine(0, 1<<j);
+        SmartSwitch.drawVerticalLine(63, 1<<j);
+        SmartSwitch.updateScreen(1<<j);
+        SmartSwitch.setButtonModes(modes ^ 1 << 2*j);
+        SmartSwitch.setButtonColor(3,0,0, 1<<j);
+      } else if (state == 1) {
+        SmartSwitch.clearPixmap(1<<j);
+        SmartSwitch.drawCircle(31, 16, 21, 1<<j);
+        SmartSwitch.updateScreen(1<<j);
+        SmartSwitch.setButtonModes(modes ^ (state | 2) << 2*j);
+        SmartSwitch.setButtonColor(0,3,0, 1<<j);
+      } else {
+        SmartSwitch.clearPixmap(1<<j);
+        SmartSwitch.updateScreen(1<<j);
+        SmartSwitch.setButtonModes(modes ^ state << 2*j);
+        SmartSwitch.setButtonColor(0,0,3, 1<<j);
+      }
+      Serial.print("ButtonState: ");
+      Serial.println(SmartSwitch.getButtonModes(), BIN);
+    }
+  }
+}
 
 
 
