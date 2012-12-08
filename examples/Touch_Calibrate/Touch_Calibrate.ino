@@ -10,6 +10,7 @@
 #include "SkaarhojUtils.h"
 SkaarhojUtils utils;
 
+#include <EEPROM.h>      // For storing IP numbers
 
 
 // Collects 16 samples, buffer:
@@ -57,7 +58,7 @@ void setup() {
 
     Serial.print("       utils.touch_calibrationPointRawCoordinates(");
     Serial.print(calibrationCoordinatesX[1]);    
-    Serial.print(",");    
+    Serial.print(",");
     Serial.print(calibrationCoordinatesY[1]);    
     Serial.print(",");    
     Serial.print(calibrationCoordinatesX[2]);    
@@ -74,6 +75,28 @@ void setup() {
     Serial.println(");");
     Serial.println("");
     Serial.println("Before you do so, please touch the screen and verify the coordinates matches the calibration picture.");
+
+    Serial.println("");
+    Serial.println("This configuration has also be written to EEPROM memory now and some recent sketches will use the data from there.");
+    Serial.println("");
+    
+    EEPROM.write(30,calibrationCoordinatesX[1]);
+    EEPROM.write(31,calibrationCoordinatesY[1]);
+    EEPROM.write(32,calibrationCoordinatesX[2]);
+    EEPROM.write(33,calibrationCoordinatesY[2]);
+    EEPROM.write(34,calibrationCoordinatesX[3]);
+    EEPROM.write(35,calibrationCoordinatesY[3]);
+    EEPROM.write(36,calibrationCoordinatesX[4]);
+    EEPROM.write(37,calibrationCoordinatesY[4]);
+    EEPROM.write(38,
+      (calibrationCoordinatesX[1]
+      + calibrationCoordinatesY[1]
+      + calibrationCoordinatesX[2]
+      + calibrationCoordinatesY[2]
+      + calibrationCoordinatesX[3]
+      + calibrationCoordinatesY[3]
+      + calibrationCoordinatesX[4]
+      + calibrationCoordinatesY[4])  & 0xFF);  // checksum
 }
 
 
